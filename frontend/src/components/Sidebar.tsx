@@ -2,15 +2,8 @@ import React from 'react';
 import { 
   LayoutDashboard, 
   PlusCircle, 
-  History, 
-<<<<<<< HEAD
-  Settings, 
-  X
-=======
-  ShieldCheck, 
   X,
   Activity
->>>>>>> a153fb0 (feat: upgrade verification engine to hybrid deterministic with Gemini fallback)
 } from 'lucide-react';
 import { LogoIcon } from './Logo';
 
