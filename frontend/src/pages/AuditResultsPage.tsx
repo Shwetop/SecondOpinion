@@ -91,19 +91,21 @@ export const AuditResultsPage: React.FC<AuditResultsPageProps> = ({ auditId, nav
 
   // Derived counts for tabs
   const counts = useMemo(() => {
-    if (!report) return { ALL: 0, CONTRADICTED: 0, CONFLICTING_EVIDENCE: 0, INSUFFICIENT_EVIDENCE: 0, SUPPORTED: 0, AMBIGUOUS: 0 };
+    if (!report) return { ALL: 0, SUPPORTED: 0, CONTRADICTED: 0, INSUFFICIENT_EVIDENCE: 0, CONFLICTING_EVIDENCE: 0, AMBIGUOUS: 0 };
     const res: Record<string, number> = {
       ALL: report.claims.length,
-      CONTRADICTED: 0,
-      CONFLICTING_EVIDENCE: 0,
-      INSUFFICIENT_EVIDENCE: 0,
       SUPPORTED: 0,
+      CONTRADICTED: 0,
+      INSUFFICIENT_EVIDENCE: 0,
+      CONFLICTING_EVIDENCE: 0,
       AMBIGUOUS: 0,
     };
     report.claims.forEach(c => {
       const v = c.verdict;
       if (v === 'AMBIGUOUS' || v === 'MIXED') {
         res.AMBIGUOUS = (res.AMBIGUOUS || 0) + 1;
+      } else if (v === 'INSUFFICIENT_EVIDENCE') {
+        res.INSUFFICIENT_EVIDENCE = (res.INSUFFICIENT_EVIDENCE || 0) + 1;
       } else if (res[v] !== undefined) {
         res[v] = (res[v] || 0) + 1;
       }
@@ -111,27 +113,16 @@ export const AuditResultsPage: React.FC<AuditResultsPageProps> = ({ auditId, nav
     return res;
   }, [report]);
 
-  // List of tabs that have at least 1 claim (plus ALL)
+  // List of tabs (All, Supported, Contradicted, Unsupported/Insufficient, Conflicting, Ambiguous)
   const availableTabs = useMemo(() => {
-    const list: { key: string; label: string; count: number }[] = [
-      { key: 'ALL', label: 'All', count: counts.ALL || 0 }
+    return [
+      { key: 'ALL', label: 'All', count: counts.ALL || 0 },
+      { key: 'SUPPORTED', label: 'Supported', count: counts.SUPPORTED || 0 },
+      { key: 'CONTRADICTED', label: 'Contradicted', count: counts.CONTRADICTED || 0 },
+      { key: 'INSUFFICIENT_EVIDENCE', label: 'Unsupported', count: counts.INSUFFICIENT_EVIDENCE || 0 },
+      { key: 'AMBIGUOUS', label: 'Ambiguous', count: counts.AMBIGUOUS || 0 },
+      ...(counts.CONFLICTING_EVIDENCE > 0 ? [{ key: 'CONFLICTING_EVIDENCE', label: 'Conflicting', count: counts.CONFLICTING_EVIDENCE }] : [])
     ];
-    if (counts.CONTRADICTED > 0) {
-      list.push({ key: 'CONTRADICTED', label: 'Contradicted', count: counts.CONTRADICTED });
-    }
-    if (counts.CONFLICTING_EVIDENCE > 0) {
-      list.push({ key: 'CONFLICTING_EVIDENCE', label: 'Conflicting', count: counts.CONFLICTING_EVIDENCE });
-    }
-    if (counts.INSUFFICIENT_EVIDENCE > 0) {
-      list.push({ key: 'INSUFFICIENT_EVIDENCE', label: 'Insufficient', count: counts.INSUFFICIENT_EVIDENCE });
-    }
-    if (counts.SUPPORTED > 0) {
-      list.push({ key: 'SUPPORTED', label: 'Supported', count: counts.SUPPORTED });
-    }
-    if (counts.AMBIGUOUS > 0) {
-      list.push({ key: 'AMBIGUOUS', label: 'Ambiguous', count: counts.AMBIGUOUS });
-    }
-    return list;
   }, [counts]);
 
   // Filtered & sorted claims
@@ -141,6 +132,8 @@ export const AuditResultsPage: React.FC<AuditResultsPageProps> = ({ auditId, nav
       if (verdictFilter !== 'ALL') {
         if (verdictFilter === 'AMBIGUOUS') {
           if (c.verdict !== 'AMBIGUOUS' && c.verdict !== 'MIXED') return false;
+        } else if (verdictFilter === 'INSUFFICIENT_EVIDENCE') {
+          if (c.verdict !== 'INSUFFICIENT_EVIDENCE') return false;
         } else if (c.verdict !== verdictFilter) {
           return false;
         }

@@ -29,8 +29,8 @@ export function getVerdictStyle(verdict: Verdict | string): VerdictStyle {
       };
     case 'INSUFFICIENT_EVIDENCE':
       return {
-        label: 'Insufficient evidence',
-        shortLabel: 'Insufficient',
+        label: 'Unsupported by source',
+        shortLabel: 'Unsupported',
         dot: 'var(--insufficient-dot)',
         text: 'var(--insufficient-text)',
         tint: 'var(--insufficient-tint)',
