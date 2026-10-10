@@ -105,7 +105,19 @@ def validate_audit_report(report: AuditReport) -> AuditReport:
         if claim.verdict == VerdictEnum.SUPPORTED:
             if not has_source_passages or not claim.supporting_evidence:
                 claim.verdict = VerdictEnum.INSUFFICIENT_EVIDENCE
+                claim.factual_verification_status = "INSUFFICIENT_EVIDENCE"
                 claim.explanation = "Deterministic validation override: Claim lacked verified supporting evidence."
+
+        # Character offset validation
+        offset_valid = False
+        if report.answer_text and 0 <= claim.start_offset <= claim.end_offset <= len(report.answer_text):
+            sliced_text = report.answer_text[claim.start_offset:claim.end_offset]
+            if sliced_text == claim.text:
+                offset_valid = True
+            else:
+                claim.extraction_status = "WARNING_OFFSET_DRIFT"
+        else:
+            claim.extraction_status = "MALFORMED_OFFSET"
 
         # 4. Attach deterministic audit trail
         claim.provenance_audit = {
@@ -113,6 +125,7 @@ def validate_audit_report(report: AuditReport) -> AuditReport:
             "passages_exist_in_source": all_passages_valid,
             "verbatim_citations_verified": all_verbatim_valid,
             "url_integrity_passed": all_urls_valid,
+            "offsets_verified": offset_valid,
             "verdict_grounded": True
         }
 

@@ -104,6 +104,12 @@ export interface ClaimItem {
   safety_issues: SafetyIssue[];
   sub_claims?: any[];
   provenance_audit?: any;
+  normalized_claim?: string | null;
+  limitations?: string | null;
+  factual_verification_status?: string | null;
+  internal_consistency_status?: string | null;
+  extraction_status?: string;
+  temporal_status?: string | null;
 }
 
 export interface AuditSummary {

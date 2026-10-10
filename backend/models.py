@@ -114,7 +114,13 @@ class ClaimItem(BaseModel):
     reasoning_issues: List[ReasoningIssue] = []
     safety_issues: List[SafetyIssue] = []
     sub_claims: List[Dict[str, Any]] = []
+    normalized_claim: Optional[str] = None
+    limitations: Optional[str] = None
     provenance_audit: Optional[Dict[str, Any]] = None
+    factual_verification_status: Optional[str] = None
+    internal_consistency_status: Optional[str] = None
+    extraction_status: str = "VALID"  # "VALID", "WARNING", "HEADING_EXCLUDED", "MALFORMED"
+    temporal_status: Optional[str] = None  # "HISTORICAL", "SCHEDULED_FUTURE", "ANNOUNCED_PLAN", "CANCELLED", "STATIC"
 
 class AuditSummary(BaseModel):
     total_claims: int = 0

@@ -5,7 +5,8 @@ import { DashboardPage } from './pages/DashboardPage';
 import { NewAuditPage } from './pages/NewAuditPage';
 import { AuditResultsPage } from './pages/AuditResultsPage';
 import { HistoryPage } from './pages/HistoryPage';
-import { SettingsPage } from './pages/SettingsPage';
+import { PlusCircle } from 'lucide-react';
+
 
 export function App() {
   const [currentRoute, setCurrentRoute] = useState<string>(() => {
@@ -56,11 +57,6 @@ export function App() {
     topBarTitle = 'Audit history';
     breadcrumbs = [{ label: 'Workspace', href: '/' }];
     pageContent = <HistoryPage navigate={navigate} />;
-    isWhiteBg = false;
-  } else if (currentRoute === '/settings') {
-    topBarTitle = 'Settings & diagnostics';
-    breadcrumbs = [{ label: 'Workspace', href: '/' }];
-    pageContent = <SettingsPage />;
     isWhiteBg = false;
   } else {
     topBarTitle = 'Not found';

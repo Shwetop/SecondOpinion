@@ -147,8 +147,14 @@ def process_file(file_path: str, original_filename: str) -> SourceDocument:
             page_count = len(doc)
             for page_idx in range(page_count):
                 page = doc[page_idx]
-                page_text = page.get_text("text")
-                sanitized_page = sanitize_source_text(page_text)
+                # Use block extraction to preserve distinct paragraph and heading boundaries
+                blocks = page.get_text("blocks")
+                block_texts = []
+                for b in blocks:
+                    b_str = b[4].strip() if len(b) > 4 else ""
+                    if b_str:
+                        block_texts.append(sanitize_source_text(b_str))
+                sanitized_page = "\n\n".join(block_texts) if block_texts else sanitize_source_text(page.get_text("text"))
                 if sanitized_page.strip():
                     full_text_parts.append(f"--- [Page {page_idx + 1}] ---\n" + sanitized_page)
                     page_passages = chunk_text_into_passages(
@@ -166,8 +172,17 @@ def process_file(file_path: str, original_filename: str) -> SourceDocument:
                 page_count = len(reader.pages)
                 for page_idx in range(page_count):
                     page = reader.pages[page_idx]
-                    page_text = page.extract_text() or ""
-                    sanitized_page = sanitize_source_text(page_text)
+                    # Use visitor or layout extraction to avoid fusing heading and text lines
+                    try:
+                        raw_page_text = page.extract_text(extraction_mode="layout") or page.extract_text() or ""
+                    except TypeError:
+                        raw_page_text = page.extract_text() or ""
+                    
+                    # Ensure lines that look like headings or distinct lines have proper spacing
+                    lines = [ln.strip() for ln in raw_page_text.splitlines() if ln.strip()]
+                    # Group lines: if a short line is followed by another line, preserve separate blocks
+                    structured_page = "\n\n".join(lines)
+                    sanitized_page = sanitize_source_text(structured_page)
                     if sanitized_page.strip():
                         full_text_parts.append(f"--- [Page {page_idx + 1}] ---\n" + sanitized_page)
                         page_passages = chunk_text_into_passages(
@@ -200,10 +215,17 @@ def process_file(file_path: str, original_filename: str) -> SourceDocument:
             doc = docx.Document(file_path)
             paragraphs_text = []
             for p in doc.paragraphs:
-                if p.text.strip():
-                    paragraphs_text.append(sanitize_source_text(p.text))
+                p_clean = p.text.strip()
+                if not p_clean:
+                    continue
+                style_name = getattr(p.style, 'name', '') or ''
+                # Preserve headings with structural emphasis and explicit boundary separation
+                if style_name.startswith('Heading') or style_name in ['Title', 'Subtitle']:
+                    paragraphs_text.append(f"### {sanitize_source_text(p_clean)}")
+                else:
+                    paragraphs_text.append(sanitize_source_text(p_clean))
             
-            # Also extract tables if present
+            # Also extract tables if present with clean pipe boundaries
             for table in doc.tables:
                 for row in table.rows:
                     row_data = [cell.text.strip() for cell in row.cells if cell.text.strip()]

@@ -4,6 +4,10 @@ import uuid
 import datetime
 import asyncio
 from typing import List, Optional
+
+# Load .env before anything else so GEMINI_API_KEY is available
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, JSONResponse, HTMLResponse
@@ -22,6 +26,10 @@ from backend.audit_repository import (
     save_audit, get_audit, list_audits, delete_audit,
     save_source_doc, get_source_doc
 )
+from backend.gemini_client import build_gemini_client
+
+# Gemini client — initialized lazily when the API key is available
+_gemini_client = None
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -29,10 +37,14 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # Application settings in memory / env
 settings_state = SettingsConfig(
     gemini_api_key_configured=bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")),
-    gemini_model="gemini-2.5-flash",
+    gemini_model="gemini-3.8-flash",
     python_version=f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
     version="1.0.0"
 )
+
+# Build Gemini client immediately if an API key is present in the environment
+_gemini_client = build_gemini_client()
+
 
 app = FastAPI(
     title="Second Opinion AI Auditing API",
@@ -108,10 +120,19 @@ async def execute_audit_pipeline(audit_id: str):
 
         verified_claims: List[ClaimItem] = []
         for idx, claim in enumerate(raw_claims):
-            # Check claim
-            v_claim = verify_single_claim(claim, retriever, report.options)
+            # Resolve per-request key (AuditOptions.custom_gemini_api_key) or fall back to global client
+            per_request_client = _gemini_client
+            if report.options.custom_gemini_api_key:
+                from backend.gemini_client import build_gemini_client as _build
+                per_request_client = _build(api_key=report.options.custom_gemini_api_key)
+
+            v_claim = verify_single_claim(
+                claim, retriever, report.options,
+                gemini_client=per_request_client,
+                gemini_model=settings_state.gemini_model,
+            )
             verified_claims.append(v_claim)
-            
+
             # Incremental progress reporting
             step_progress = 70 + int((idx + 1) / len(raw_claims) * 20)
             report.progress_percentage = min(90, step_progress)
@@ -161,9 +182,12 @@ def get_settings():
 
 @app.post("/api/settings", response_model=SettingsConfig)
 def update_settings(payload: dict):
+    global _gemini_client
     if "gemini_api_key" in payload and payload["gemini_api_key"]:
         os.environ["GEMINI_API_KEY"] = payload["gemini_api_key"]
         settings_state.gemini_api_key_configured = True
+        # Rebuild client with the new key
+        _gemini_client = build_gemini_client(api_key=payload["gemini_api_key"])
     if "gemini_model" in payload:
         settings_state.gemini_model = payload["gemini_model"]
     if "retention_days" in payload:

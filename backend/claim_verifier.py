@@ -14,6 +14,20 @@ from backend.numerical_checker import check_numerical_consistency, extract_numbe
 from backend.reasoning_checker import check_reasoning_flaws
 from backend.safety_checker import check_safety_concerns
 from backend.confidence import calculate_confidence
+from backend.relationship_classifier import (
+    classify_assertion_relationship, FactRelationEnum
+)
+from backend.fact_normalizer import (
+    normalize_date_string, extract_all_normalized_dates,
+    normalize_quantity, NormalizedDate, NormalizedQuantity
+)
+from backend.relation_extractor import (
+    extract_entity_facts, compare_entity_relationships
+)
+from backend.temporal_checker import (
+    evaluate_claim_temporality, EventModalityEnum
+)
+from backend.gemini_client import gemini_semantic_entailment
 
 NEGATION_PAIRS = [
     (re.compile(r'\b(increased|growth|rose|surged|expanded)\b', re.IGNORECASE),
@@ -55,26 +69,84 @@ def evaluate_passage_for_claim(
     """
     Evaluate whether a single passage ENTAILS, CONTRADICTS, or is NEUTRAL to the claim.
     Returns (relationship, reason, quote, lexical_overlap).
+    Guarantees:
+    - Semantic equivalence in dates/units is never treated as a contradiction.
+    - Year-only vs specific dates are recognized as consistent.
+    - True contradictions in figures/years are captured.
+    - Compatible statements about different events are recognized as neutral/consistent.
     """
     p_text = passage.text
     claim_tokens = set(tokenize(claim_text))
     p_tokens = set(tokenize(p_text))
     overlap = len(claim_tokens.intersection(p_tokens)) / max(len(claim_tokens), 1)
 
-    # 1. Deterministic Numerical & Date Consistency Check (requires topical relevance)
-    if overlap >= 0.20 or top_score >= 0.6:
-        num_analysis = check_numerical_consistency(claim_text, p_text)
-        if num_analysis.has_discrepancy:
-            reason = f"Contradiction identified: {num_analysis.detail}"
+    # 1. First run relationship classifier on dates and normalized facts
+    fact_rel, fact_expl = classify_assertion_relationship(claim_text, p_text)
+    
+    if fact_rel == FactRelationEnum.EQUIVALENT:
+        # Recognized as equivalent meaning only if lexical overlap or topical relevance is high
+        # to ensure dates aren't from unrelated facts
+        if overlap >= 0.40:
+            ev_quote = create_grounded_evidence_quote(
+                passage=passage,
+                claim_text=claim_text,
+                similarity_score=top_score,
+                relationship=EvidenceRelationshipEnum.ENTAILS
+            )
+            return EvidenceRelationshipEnum.ENTAILS, f"Corroborated: {fact_expl}", ev_quote, max(overlap, 0.6)
+
+
+    if fact_rel == FactRelationEnum.CONTRADICTION:
+        ev_quote = create_grounded_evidence_quote(
+            passage=passage,
+            claim_text=claim_text,
+            similarity_score=top_score,
+            relationship=EvidenceRelationshipEnum.CONTRADICTS
+        )
+        return EvidenceRelationshipEnum.CONTRADICTS, f"Contradiction identified: {fact_expl}", ev_quote, overlap
+
+    # 1b. Predicate-Aware Entity & Location Relationship Check
+    claim_facts = extract_entity_facts(claim_text)
+    ev_facts = extract_entity_facts(p_text)
+    if claim_facts and ev_facts:
+        rel_type, rel_expl = compare_entity_relationships(claim_facts, ev_facts)
+        if rel_type == "EQUIVALENT":
+            ev_quote = create_grounded_evidence_quote(
+                passage=passage,
+                claim_text=claim_text,
+                similarity_score=top_score,
+                relationship=EvidenceRelationshipEnum.ENTAILS
+            )
+            return EvidenceRelationshipEnum.ENTAILS, f"Corroborated: {rel_expl}", ev_quote, max(overlap, 0.6)
+        elif rel_type == "CONTRADICTION":
             ev_quote = create_grounded_evidence_quote(
                 passage=passage,
                 claim_text=claim_text,
                 similarity_score=top_score,
                 relationship=EvidenceRelationshipEnum.CONTRADICTS
             )
-            return EvidenceRelationshipEnum.CONTRADICTS, reason, ev_quote, overlap
+            return EvidenceRelationshipEnum.CONTRADICTS, f"Contradiction identified: {rel_expl}", ev_quote, overlap
+        elif rel_type == "CONSISTENT":
+            # Distinct predicates (e.g., born_in vs raised_in) are explicitly CONSISTENT
+            fact_rel = FactRelationEnum.CONSISTENT
 
-        # 2. Polar Semantic Negation Check
+    # 2. Deterministic Numerical & Date Consistency Check (requires topical relevance)
+    if overlap >= 0.20 or top_score >= 0.6:
+        # Check numerical discrepancy
+        num_analysis = check_numerical_consistency(claim_text, p_text)
+        if num_analysis.has_discrepancy:
+            # If the relationship classifier marked it CONSISTENT (e.g. different historical events), do not flag
+            if fact_rel != FactRelationEnum.CONSISTENT:
+                reason = f"Contradiction identified: {num_analysis.detail}"
+                ev_quote = create_grounded_evidence_quote(
+                    passage=passage,
+                    claim_text=claim_text,
+                    similarity_score=top_score,
+                    relationship=EvidenceRelationshipEnum.CONTRADICTS
+                )
+                return EvidenceRelationshipEnum.CONTRADICTS, reason, ev_quote, overlap
+
+        # 3. Polar Semantic Negation Check
         polarity_issue = detect_semantic_contradiction(claim_text, p_text)
         if polarity_issue:
             reason = f"Contradiction identified: {polarity_issue}"
@@ -86,16 +158,11 @@ def evaluate_passage_for_claim(
             )
             return EvidenceRelationshipEnum.CONTRADICTS, reason, ev_quote, overlap
 
-    # 3. Grounded Entailment Check
-    # A passage entails only if:
-    # - It has substantial lexical/entity grounding (overlap >= 0.50 or high score >= 1.6)
-    # - If claim contains numbers, ALL claim numbers must be present or corroborated in the passage
-    # - If claim contains dates, dates must align
+    # 4. Grounded Entailment Check
     claim_nums = extract_numbers(claim_text)
-    p_nums = extract_numbers(p_text)
     claim_dates = extract_dates(claim_text)
 
-    # If claim has specific numbers, ensure they are present in the passage
+    # If claim has specific numbers, ensure they are present or semantically equivalent
     numbers_present = True
     if claim_nums:
         for _, c_raw, _ in claim_nums:
@@ -106,12 +173,38 @@ def evaluate_passage_for_claim(
     dates_present = True
     if claim_dates:
         for cd in claim_dates:
-            if cd.lower() not in p_text.lower():
+            norm_cd = normalize_date_string(cd)
+            if cd.lower() in p_text.lower():
+                continue
+            # Check if an equivalent date exists in passage
+            p_dates = extract_all_normalized_dates(p_text)
+            matched_equiv = False
+            if norm_cd and p_dates:
+                for pd in p_dates:
+                    if norm_cd.iso_date and pd.iso_date and norm_cd.iso_date == pd.iso_date:
+                        matched_equiv = True
+                        break
+                    elif norm_cd.year == pd.year and (norm_cd.is_year_only or pd.is_year_only):
+                        matched_equiv = True
+                        break
+            if not matched_equiv:
                 dates_present = False
                 break
 
+    # Check that named entities or key content words in claim exist in passage
+    # For instance, if claim states 'Berlin' and passage states 'Paris', Berlin cannot be corroborated
+    claim_words = [w for w in re.findall(r'\b[A-Za-z]{3,}\b', claim_text) if w.lower() not in {"the", "and", "was", "were", "located", "stands", "that", "this", "from", "with", "into", "year", "years"}]
+    # Words with capital letter in claim:
+    proper_nouns = [w for w in re.findall(r'\b[A-Z][a-z]+\b', claim_text) if w.lower() not in {"the", "this", "that", "these", "those"}]
+    proper_nouns_present = True
+    if proper_nouns:
+        for pn in proper_nouns:
+            if pn.lower() not in p_text.lower():
+                proper_nouns_present = False
+                break
+
     # Strictly grounded entailment criteria
-    if overlap >= 0.45 and numbers_present and dates_present and top_score >= 0.5:
+    if overlap >= 0.40 and numbers_present and dates_present and proper_nouns_present and top_score >= 0.4:
         reason = f"Corroborated by {passage.filename} (Page {passage.page_number or 1}). Passage directly matches key assertions."
         ev_quote = create_grounded_evidence_quote(
             passage=passage,
@@ -134,12 +227,24 @@ def verify_single_claim(
     claim: ClaimItem,
     retriever: BM25Retriever,
     options: AuditOptions,
-    gemini_client = None
+    gemini_client = None,
+    gemini_model: str = "gemini-3.8-flash",
 ) -> ClaimItem:
     """
     Verify a single atomic claim against indexed source passages using multi-passage analysis.
     Distinguishes SUPPORTED, CONTRADICTED, INSUFFICIENT_EVIDENCE, CONFLICTING_EVIDENCE, and MIXED.
+    Populates normalized_claim and limitations fields.
+
+    When ``gemini_client`` is provided, NEUTRAL passages are re-evaluated via Gemini's
+    semantic entailment to reduce false INSUFFICIENT_EVIDENCE verdicts.
+    Deterministic checks always run first; Gemini is a fallback layer only.
+    Every definitive verdict still references evidence actually retrieved from the sources.
     """
+    # Normalized representation of claim
+    norm_dates = extract_all_normalized_dates(claim.text)
+    if norm_dates:
+        claim.normalized_claim = f"Normalized Dates: {[d.iso_date or str(d.year) for d in norm_dates]}"
+
     # 1. Retrieve candidates
     ranked_passages = retriever.retrieve(claim.text, top_k=5)
 
@@ -158,13 +263,36 @@ def verify_single_claim(
             )
             claim.severity = highest_sev
 
+    # Temporal assessment
+    temp_assessment = evaluate_claim_temporality(claim.text)
+    claim.temporal_status = temp_assessment.modality.value
+    if temp_assessment.is_time_sensitive:
+        claim.limitations = f"Temporal context: {temp_assessment.status_detail}"
+
+    # If claim describes a future scheduled event with completed-past phrasing (e.g. "The tournament took place in Dec 2026"), flag contradiction
+    if temp_assessment.modality == EventModalityEnum.SCHEDULED_FUTURE and "took place" in claim.text.lower():
+        claim.verdict = VerdictEnum.CONTRADICTED
+        claim.explanation = f"Temporal inconsistency: {temp_assessment.status_detail}"
+        claim.factual_verification_status = "TEMPORAL_CONTRADICTION"
+        claim.internal_consistency_status = "INCONSISTENT_TIMELINE"
+        claim.confidence_score = 0.90
+        claim.confidence_basis = "Deterministic temporal timeline check."
+        claim.severity = SeverityEnum.HIGH
+        return claim
+
     # If no relevant passages found in source material
     if not ranked_passages or ranked_passages[0][1] < 0.20:
         claim.verdict = VerdictEnum.INSUFFICIENT_EVIDENCE
-        claim.explanation = "No sufficient supporting evidence found in the provided source material."
+        if temp_assessment.modality in [EventModalityEnum.SCHEDULED_FUTURE, EventModalityEnum.ANNOUNCED_PLAN]:
+            claim.explanation = f"Future milestone/schedule '{claim.text}' has no verified corroboration in the provided sources. Conservative abstention: not marked false."
+        else:
+            claim.explanation = "No sufficient supporting evidence found in the provided source material."
         claim.supporting_evidence = []
         claim.contradicting_evidence = []
         claim.suggested_correction = None
+        claim.factual_verification_status = "INSUFFICIENT_EVIDENCE"
+        claim.internal_consistency_status = "CONSISTENT"
+        claim.limitations = "Evidence retrieval yielded zero candidate passages above relevance threshold."
         claim.confidence_score, claim.confidence_basis = calculate_confidence(
             verdict=VerdictEnum.INSUFFICIENT_EVIDENCE,
             retrieval_score=ranked_passages[0][1] if ranked_passages else 0.0,
@@ -187,6 +315,37 @@ def verify_single_claim(
         rel, reason, quote, overlap = evaluate_passage_for_claim(claim.text, p, score)
         best_overlap = max(best_overlap, overlap)
 
+        # ── Gemini semantic fallback for NEUTRAL passages ──────────────────────
+        # When deterministic checks cannot resolve the claim, ask Gemini.
+        # Gemini upgrades the relationship only — the *evidence quote* still comes
+        # from the retrieved passage to preserve source traceability.
+        if rel == EvidenceRelationshipEnum.NEUTRAL and gemini_client is not None:
+            g_rel, g_reason = gemini_semantic_entailment(
+                claim_text=claim.text,
+                passage_text=p.text,
+                client=gemini_client,
+                model=gemini_model,
+            )
+            if g_rel == "ENTAILS":
+                rel = EvidenceRelationshipEnum.ENTAILS
+                reason = f"[Gemini-assisted] {g_reason}"
+                quote = create_grounded_evidence_quote(
+                    passage=p,
+                    claim_text=claim.text,
+                    similarity_score=score,
+                    relationship=EvidenceRelationshipEnum.ENTAILS
+                )
+            elif g_rel == "CONTRADICTS":
+                rel = EvidenceRelationshipEnum.CONTRADICTS
+                reason = f"[Gemini-assisted] {g_reason}"
+                quote = create_grounded_evidence_quote(
+                    passage=p,
+                    claim_text=claim.text,
+                    similarity_score=score,
+                    relationship=EvidenceRelationshipEnum.CONTRADICTS
+                )
+        # ──────────────────────────────────────────────────────────────────────
+
         if rel == EvidenceRelationshipEnum.CONTRADICTS:
             contradicting_quotes.append(quote)
             if reason:
@@ -196,6 +355,7 @@ def verify_single_claim(
             if reason:
                 support_reasons.append(reason)
 
+
     # If full claim did not yield direct supporting quote, evaluate individual sub-clauses
     if not supporting_quotes and claim.sub_claims and len(claim.sub_claims) > 1:
         for sc in claim.sub_claims:
@@ -203,6 +363,30 @@ def verify_single_claim(
             for p, score in ranked_passages:
                 rel_sc, reason_sc, quote_sc, overlap_sc = evaluate_passage_for_claim(sc_text, p, score)
                 best_overlap = max(best_overlap, overlap_sc)
+
+                # Gemini fallback for NEUTRAL sub-claim passages
+                if rel_sc == EvidenceRelationshipEnum.NEUTRAL and gemini_client is not None:
+                    g_rel_sc, g_reason_sc = gemini_semantic_entailment(
+                        claim_text=sc_text,
+                        passage_text=p.text,
+                        client=gemini_client,
+                        model=gemini_model,
+                    )
+                    if g_rel_sc == "ENTAILS":
+                        rel_sc = EvidenceRelationshipEnum.ENTAILS
+                        reason_sc = f"[Gemini-assisted] {g_reason_sc}"
+                        quote_sc = create_grounded_evidence_quote(
+                            passage=p, claim_text=sc_text, similarity_score=score,
+                            relationship=EvidenceRelationshipEnum.ENTAILS
+                        )
+                    elif g_rel_sc == "CONTRADICTS":
+                        rel_sc = EvidenceRelationshipEnum.CONTRADICTS
+                        reason_sc = f"[Gemini-assisted] {g_reason_sc}"
+                        quote_sc = create_grounded_evidence_quote(
+                            passage=p, claim_text=sc_text, similarity_score=score,
+                            relationship=EvidenceRelationshipEnum.CONTRADICTS
+                        )
+
                 if rel_sc == EvidenceRelationshipEnum.ENTAILS:
                     sc["verdict"] = "SUPPORTED"
                     sc["quote"] = quote_sc.text
@@ -217,6 +401,7 @@ def verify_single_claim(
                     break
             if "verdict" not in sc or not sc["verdict"]:
                 sc["verdict"] = "INSUFFICIENT_EVIDENCE"
+
 
     # Update numerical analysis on claim from primary candidate
     claim.numerical_analysis = check_numerical_consistency(claim.text, primary_passage.text)
@@ -233,6 +418,7 @@ def verify_single_claim(
         claim.contradicting_evidence = [contradicting_quotes[0]]
         claim.severity = SeverityEnum.HIGH
         claim.suggested_correction = f"Reconcile divergent source accounts: compare {contradicting_quotes[0].filename} and {supporting_quotes[0].filename}."
+        claim.limitations = "Sources materially diverge on this assertion; requires human editorial arbitration."
         claim.confidence_score, claim.confidence_basis = calculate_confidence(
             verdict=VerdictEnum.CONFLICTING_EVIDENCE,
             retrieval_score=primary_score,
@@ -254,6 +440,9 @@ def verify_single_claim(
         
         contra_ev = contradicting_quotes[0]
         claim.suggested_correction = f"Revise statement according to {contra_ev.filename} (Page {contra_ev.page_number or 1}): '{contra_ev.text}'."
+        claim.limitations = "Contradiction established against verified primary source passage."
+        claim.factual_verification_status = "CONTRADICTED"
+        claim.internal_consistency_status = "INCONSISTENT_WITH_SOURCE"
         claim.confidence_score, claim.confidence_basis = calculate_confidence(
             verdict=VerdictEnum.CONTRADICTED,
             retrieval_score=primary_score,
@@ -265,9 +454,7 @@ def verify_single_claim(
 
     # Case C: SUPPORTED or MIXED (supporting quotes present, zero contradictions)
     if supporting_quotes:
-        # Check if multi-part claim needs decomposition
         if claim.sub_claims and len(claim.sub_claims) > 1:
-            # Check each sub-part
             part_evals = []
             for part in claim.sub_claims:
                 part_text = part["text"]
@@ -286,6 +473,9 @@ def verify_single_claim(
                 claim.supporting_evidence = [supporting_quotes[0]]
                 claim.contradicting_evidence = []
                 claim.suggested_correction = None
+                claim.limitations = "Corroborated across primary document text."
+                claim.factual_verification_status = "SUPPORTED"
+                claim.internal_consistency_status = "CONSISTENT"
             else:
                 claim.verdict = VerdictEnum.MIXED
                 sup_count = sum(1 for e in part_evals if e)
@@ -296,6 +486,9 @@ def verify_single_claim(
                 claim.supporting_evidence = [supporting_quotes[0]]
                 claim.contradicting_evidence = []
                 claim.suggested_correction = f"Qualify assertion: align specifically with documented passage '{supporting_quotes[0].text}'."
+                claim.limitations = "Compound assertion partially verified; unverified clauses require separate sourcing."
+                claim.factual_verification_status = "PARTIALLY_SUPPORTED"
+                claim.internal_consistency_status = "CONSISTENT"
                 claim.confidence_score, claim.confidence_basis = calculate_confidence(
                     verdict=VerdictEnum.MIXED,
                     retrieval_score=primary_score,
@@ -310,6 +503,9 @@ def verify_single_claim(
             claim.supporting_evidence = [supporting_quotes[0]]
             claim.contradicting_evidence = []
             claim.suggested_correction = None
+            claim.limitations = "Corroborated by primary evidence passage."
+            claim.factual_verification_status = "SUPPORTED"
+            claim.internal_consistency_status = "CONSISTENT"
 
         claim.confidence_score, claim.confidence_basis = calculate_confidence(
             verdict=VerdictEnum.SUPPORTED,
@@ -327,6 +523,7 @@ def verify_single_claim(
     claim.supporting_evidence = []
     claim.contradicting_evidence = []
     claim.suggested_correction = None
+    claim.limitations = "Passages retrieved do not contain factual assertion needed to decide veracity."
     claim.confidence_score, claim.confidence_basis = calculate_confidence(
         verdict=VerdictEnum.INSUFFICIENT_EVIDENCE,
         retrieval_score=primary_score,
