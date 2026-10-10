@@ -82,7 +82,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 ? (currentRoute === '/history' || isAuditResults)
                 : currentRoute === item.id;
 
-<<<<<<< HEAD
               return (
                 <button
                   key={item.id}
@@ -115,54 +114,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Bottom "Audit Engine" card: pinned to the bottom, hairline border, radius 12px, padding 16px */}
         <div className="border border-[var(--line)] rounded-[12px] p-4 bg-white space-y-2.5">
-=======
-          {/* Navigation Links */}
-          <div className="px-3 py-1 space-y-4">
-            <div>
-              <span className="px-3 text-[10px] font-bold text-[#8A928A] uppercase tracking-wider block mb-1">
-                Workspace
-              </span>
-              <nav className="space-y-0.5">
-                {mainNav.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = currentRoute === item.id || 
-                    (item.id !== '/' && currentRoute.startsWith(item.id));
 
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => {
-                        navigate(item.id);
-                        setIsOpenMobile(false);
-                      }}
-                      className={`
-                        w-full flex items-center justify-between px-3 py-2 rounded text-[13px] font-medium transition-all text-left
-                        ${isActive 
-                          ? 'bg-[#EBF2EE] text-[#326B55] font-semibold' 
-                          : 'text-[#484F49] hover:bg-[#F7F8F6] hover:text-[#1C211E]'}
-                      `}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <Icon className={`w-4 h-4 ${isActive ? 'text-[#326B55]' : 'text-[#707770]'}`} strokeWidth={1.9} />
-                        <span>{item.label}</span>
-                      </div>
-                      {item.badge && (
-                        <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#326B55] text-white">
-                          {item.badge}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
-          </div>
-        </div>
-
-
-        {/* Diagnostics & Operational Status Footer */}
-        <div className="p-3.5 border-t border-[#E2E5E0] bg-[#FAFAF9] text-[11px] text-[#707770] space-y-2">
->>>>>>> a153fb0 (feat: upgrade verification engine to hybrid deterministic with Gemini fallback)
           <div className="flex items-center justify-between">
             <span className="text-[13px] font-bold text-[var(--ink)]">
               Audit engine
