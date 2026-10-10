@@ -78,18 +78,6 @@ export const NewAuditPage: React.FC<NewAuditPageProps> = ({ navigate }) => {
     setUploadedDocs(prev => prev.filter(d => d.id !== id));
   };
 
-  const loadDemo = async (demoId: 'earnings' | 'cybersecurity') => {
-    try {
-      const demo = await fetchDemoDataset(demoId);
-      setTitle(demo.title);
-      setAnswerText(demo.answer_text);
-      setSourceMode('paste');
-      setPastedSource(demo.source_text);
-    } catch (err: any) {
-      alert(`Failed to load preset: ${err.message}`);
-    }
-  };
-
   const handleRunAudit = async () => {
     if (!answerText.trim()) {
       setSubmitError('Please provide target AI output text to audit.');
@@ -149,7 +137,7 @@ export const NewAuditPage: React.FC<NewAuditPageProps> = ({ navigate }) => {
   return (
     <div className="w-full max-w-[1200px] mx-auto px-6 lg:px-10 py-9 space-y-7">
       
-      {/* Page Title & Presets */}
+      {/* Page Title */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-[28px] font-extrabold text-[var(--ink)] tracking-tight">
@@ -158,25 +146,6 @@ export const NewAuditPage: React.FC<NewAuditPageProps> = ({ navigate }) => {
           <p className="text-[14px] text-[var(--text-secondary)] mt-1 font-medium">
             Verify AI-generated answers against primary reference documentation with traceable citations.
           </p>
-        </div>
-
-        {/* Playfield Demo Data Pills */}
-        <div className="flex items-center gap-2 text-[13px]">
-          <span className="text-[var(--text-secondary)] font-medium hidden sm:inline">Presets:</span>
-          <button
-            type="button"
-            onClick={() => loadDemo('earnings')}
-            className="h-[38px] px-3.5 font-bold bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--line)] rounded-[10px] text-[var(--ink)] transition-colors"
-          >
-            BioCorp Q3 SEC
-          </button>
-          <button
-            type="button"
-            onClick={() => loadDemo('cybersecurity')}
-            className="h-[38px] px-3.5 font-bold bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--line)] rounded-[10px] text-[var(--ink)] transition-colors"
-          >
-            Cloud Security
-          </button>
         </div>
       </div>
 

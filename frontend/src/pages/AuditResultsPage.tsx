@@ -24,6 +24,31 @@ interface AuditResultsPageProps {
   navigate: (route: string) => void;
 }
 
+// Format complex passage identifiers into simple, human-friendly labels
+export function formatPassageLabel(rawId?: string, fallbackIndex?: number): string {
+  if (!rawId) return fallbackIndex !== undefined ? `Passage ${fallbackIndex + 1}` : '';
+  // Match patterns like "67568b85_p4_2" or "0a057193_p1_1"
+  const m = rawId.match(/_p(\d+)_(\d+)/i);
+  if (m) {
+    const page = m[1];
+    const para = m[2];
+    return `Section ${page}, Item ${para}`;
+  }
+  // Match simple numbers or short strings
+  const numMatch = rawId.match(/\d+/);
+  if (numMatch) {
+    return `Passage ${numMatch[0]}`;
+  }
+  return `Passage ${rawId.slice(0, 8)}`;
+}
+
+// Strip internal "[Gemini-assisted]" tags if present in historical audits
+export function cleanFindingText(text?: string): string {
+  if (!text) return '';
+  return text.replace(/\[Gemini-assisted\]\s*/gi, '').trim();
+}
+
+
 export const AuditResultsPage: React.FC<AuditResultsPageProps> = ({ auditId, navigate }) => {
   const [report, setReport] = useState<AuditReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -395,26 +420,39 @@ export const AuditResultsPage: React.FC<AuditResultsPageProps> = ({ auditId, nav
                     <button
                       key={c.id}
                       onClick={() => setSelectedId(c.id)}
-                      className={`w-full text-left p-4 transition-colors ${
-                        isSelected ? 'bg-[var(--surface-hover)]' : 'hover:bg-[var(--surface-alt)]'
+                      className={`w-full text-left p-4 transition-all relative border-l-4 ${
+                        isSelected 
+                          ? 'shadow-xs font-semibold' 
+                          : 'hover:opacity-90'
                       }`}
+                      style={{
+                        backgroundColor: isSelected ? vStyle.tint : 'transparent',
+                        borderLeftColor: vStyle.dot,
+                      }}
                     >
-                      {/* Line 1: Claim number (mono, secondary), verdict dot + label, N evidence right */}
+                      {/* Line 1: Claim number (mono, secondary), verdict pill + label, N evidence right */}
                       <div className="flex items-center justify-between text-[11.5px] leading-tight">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-[var(--text-secondary)]">#{c.claim_number}</span>
-                          <span className="flex items-center gap-1 font-semibold" style={{ color: vStyle.text }}>
+                          <span className="font-mono text-[var(--text-secondary)] font-semibold">#{c.claim_number}</span>
+                          <span 
+                            className="px-2 py-0.5 rounded-full flex items-center gap-1.5 font-bold text-[10.5px]"
+                            style={{ 
+                              backgroundColor: vStyle.tint, 
+                              color: vStyle.text,
+                              border: `1px solid ${vStyle.dot}40`
+                            }}
+                          >
                             <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: vStyle.dot }} />
                             <span>{vStyle.shortLabel}</span>
                           </span>
                         </div>
-                        <span className="font-mono text-[var(--text-secondary)] text-[11px]">
+                        <span className="font-mono text-[var(--text-secondary)] text-[11px] font-medium">
                           {evCount} evidence
                         </span>
                       </div>
 
                       {/* Line 2: Claim text clamped to two lines (14px) */}
-                      <p className="text-[13.5px] font-medium text-[var(--ink)] line-clamp-2 mt-1.5 leading-snug">
+                      <p className="text-[13.5px] font-medium text-[var(--ink)] line-clamp-2 mt-2 leading-snug">
                         {c.text}
                       </p>
                     </button>
@@ -534,7 +572,7 @@ export const AuditResultsPage: React.FC<AuditResultsPageProps> = ({ auditId, nav
                         VERDICT AND FINDING
                       </span>
                       <p className="text-[15px] leading-[1.65] text-[var(--ink)] font-normal">
-                        {focusedClaim.explanation}
+                        {cleanFindingText(focusedClaim.explanation)}
                       </p>
                     </div>
 
@@ -555,8 +593,10 @@ export const AuditResultsPage: React.FC<AuditResultsPageProps> = ({ auditId, nav
                               <blockquote className="font-serif italic text-[18px] leading-[1.7] text-[var(--ink)]">
                                 "{ev.text}"
                               </blockquote>
-                              <div className="text-[12px] font-mono text-[var(--text-secondary)]">
-                                {ev.filename} {ev.page_number ? `· Page ${ev.page_number}` : ''} {ev.passage_id ? `· Passage ${ev.passage_id}` : ''}
+                              <div className="text-[12px] font-mono text-[var(--text-secondary)] flex items-center gap-2">
+                                <span className="font-semibold text-[var(--ink)]">{ev.filename}</span>
+                                {ev.page_number && <span>· Page {ev.page_number}</span>}
+                                {ev.passage_id && <span>· {formatPassageLabel(ev.passage_id, i)}</span>}
                               </div>
                             </div>
                           ))}
@@ -681,7 +721,7 @@ export const AuditResultsPage: React.FC<AuditResultsPageProps> = ({ auditId, nav
                             className="bg-[var(--surface-alt)] border border-[var(--line)] rounded-[10px] p-4 text-[13px] font-mono leading-relaxed"
                           >
                             <div className="text-[11px] text-[var(--text-secondary)] mb-2 font-semibold">
-                              Page {ev.page_number || 1} {ev.passage_id ? `· Passage #${ev.passage_id}` : ''}
+                              Page {ev.page_number || 1} {ev.passage_id ? `· ${formatPassageLabel(ev.passage_id, i)}` : ''}
                             </div>
                             <p className="text-[var(--ink)]">
                               <span style={{ backgroundColor: focusedVStyle.tint, color: focusedVStyle.text, padding: '2px 4px', borderRadius: '4px' }}>
@@ -833,7 +873,7 @@ export const AuditResultsPage: React.FC<AuditResultsPageProps> = ({ auditId, nav
                               RECOMMENDED ACTION
                             </span>
                             <p className="text-[14px] leading-relaxed text-[var(--text-body)]">
-                              {c.suggested_correction || c.explanation || 'Verify statement against primary source material.'}
+                              {cleanFindingText(c.suggested_correction || c.explanation || 'Verify statement against primary source material.')}
                             </p>
                           </div>
                         </div>

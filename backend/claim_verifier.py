@@ -328,7 +328,7 @@ def verify_single_claim(
             )
             if g_rel == "ENTAILS":
                 rel = EvidenceRelationshipEnum.ENTAILS
-                reason = f"[Gemini-assisted] {g_reason}"
+                reason = g_reason
                 quote = create_grounded_evidence_quote(
                     passage=p,
                     claim_text=claim.text,
@@ -337,7 +337,7 @@ def verify_single_claim(
                 )
             elif g_rel == "CONTRADICTS":
                 rel = EvidenceRelationshipEnum.CONTRADICTS
-                reason = f"[Gemini-assisted] {g_reason}"
+                reason = g_reason
                 quote = create_grounded_evidence_quote(
                     passage=p,
                     claim_text=claim.text,
@@ -374,14 +374,14 @@ def verify_single_claim(
                     )
                     if g_rel_sc == "ENTAILS":
                         rel_sc = EvidenceRelationshipEnum.ENTAILS
-                        reason_sc = f"[Gemini-assisted] {g_reason_sc}"
+                        reason_sc = g_reason_sc
                         quote_sc = create_grounded_evidence_quote(
                             passage=p, claim_text=sc_text, similarity_score=score,
                             relationship=EvidenceRelationshipEnum.ENTAILS
                         )
                     elif g_rel_sc == "CONTRADICTS":
                         rel_sc = EvidenceRelationshipEnum.CONTRADICTS
-                        reason_sc = f"[Gemini-assisted] {g_reason_sc}"
+                        reason_sc = g_reason_sc
                         quote_sc = create_grounded_evidence_quote(
                             passage=p, claim_text=sc_text, similarity_score=score,
                             relationship=EvidenceRelationshipEnum.CONTRADICTS
