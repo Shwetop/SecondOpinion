@@ -31,7 +31,10 @@ from backend.gemini_client import build_gemini_client
 # Gemini client — initialized lazily when the API key is available
 _gemini_client = None
 
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+if os.environ.get("VERCEL"):
+    UPLOAD_DIR = "/tmp/uploads"
+else:
+    UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Application settings in memory / env

@@ -4,7 +4,11 @@ import sqlite3
 from typing import List, Optional, Dict, Any
 from backend.models import AuditReport, AuditListItem, AuditStatusEnum, SourceDocument
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "second_opinion.db")
+# On Vercel the filesystem is read-only except /tmp
+if os.environ.get("VERCEL"):
+    DB_PATH = "/tmp/second_opinion.db"
+else:
+    DB_PATH = os.path.join(os.path.dirname(__file__), "second_opinion.db")
 
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
