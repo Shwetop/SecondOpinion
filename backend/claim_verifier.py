@@ -245,8 +245,8 @@ def verify_single_claim(
     if norm_dates:
         claim.normalized_claim = f"Normalized Dates: {[d.iso_date or str(d.year) for d in norm_dates]}"
 
-    # 1. Retrieve candidates
-    ranked_passages = retriever.retrieve(claim.text, top_k=5)
+    # 1. Retrieve candidates (top_k=3 balances multi-source conflict detection with fast latency)
+    ranked_passages = retriever.retrieve(claim.text, top_k=3)
 
     # Reasoning and Safety checks
     if options.reasoning_checks:
@@ -316,10 +316,9 @@ def verify_single_claim(
         best_overlap = max(best_overlap, overlap)
 
         # ── Gemini semantic fallback for NEUTRAL passages ──────────────────────
-        # When deterministic checks cannot resolve the claim, ask Gemini.
-        # Gemini upgrades the relationship only — the *evidence quote* still comes
-        # from the retrieved passage to preserve source traceability.
-        if rel == EvidenceRelationshipEnum.NEUTRAL and gemini_client is not None:
+        # Only query Gemini if the passage has topical relevance (score >= 0.30 or overlap >= 0.15)
+        # to prevent wasteful external network calls on irrelevant passages.
+        if rel == EvidenceRelationshipEnum.NEUTRAL and gemini_client is not None and (score >= 0.30 or overlap >= 0.15):
             g_rel, g_reason = gemini_semantic_entailment(
                 claim_text=claim.text,
                 passage_text=p.text,
@@ -354,6 +353,7 @@ def verify_single_claim(
             supporting_quotes.append(quote)
             if reason:
                 support_reasons.append(reason)
+
 
 
     # If full claim did not yield direct supporting quote, evaluate individual sub-clauses
