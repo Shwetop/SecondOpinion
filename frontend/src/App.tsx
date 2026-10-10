@@ -6,7 +6,6 @@ import { NewAuditPage } from './pages/NewAuditPage';
 import { AuditResultsPage } from './pages/AuditResultsPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { PlusCircle } from 'lucide-react';
 
 export function App() {
   const [currentRoute, setCurrentRoute] = useState<string>(() => {
@@ -31,51 +30,47 @@ export function App() {
 
   // Determine active view
   let pageContent: React.ReactNode = null;
-  let topBarTitle = 'Audit Workspace';
+  let topBarTitle = 'Audit workspace';
   let breadcrumbs: { label: string; href?: string }[] = [];
-  let topBarActions: React.ReactNode = null;
+  let isWhiteBg = false;
 
   if (currentRoute === '/' || currentRoute === '') {
-    topBarTitle = 'Audit Workspace';
+    topBarTitle = 'Audit workspace';
     pageContent = <DashboardPage navigate={navigate} />;
-    topBarActions = (
-      <button
-        onClick={() => navigate('/audit/new')}
-        className="flex items-center gap-1.5 px-3 py-1.5 bg-[#326B55] hover:bg-[#285644] text-[#FFFFFF] rounded text-[12px] font-medium transition-colors"
-      >
-        <PlusCircle className="w-3.5 h-3.5" />
-        <span>New Audit</span>
-      </button>
-    );
+    isWhiteBg = false;
   } else if (currentRoute === '/audit/new') {
-    topBarTitle = 'New Audit';
+    topBarTitle = 'New audit';
     breadcrumbs = [{ label: 'Workspace', href: '/' }];
     pageContent = <NewAuditPage navigate={navigate} />;
+    isWhiteBg = false;
   } else if (currentRoute.startsWith('/audit/')) {
     const auditId = currentRoute.replace('/audit/', '');
-    topBarTitle = `Audit Ledger`;
+    topBarTitle = 'Audit ledger';
     breadcrumbs = [
       { label: 'Workspace', href: '/' },
       { label: 'Audits', href: '/history' }
     ];
     pageContent = <AuditResultsPage auditId={auditId} navigate={navigate} />;
+    isWhiteBg = true;
   } else if (currentRoute === '/history') {
-    topBarTitle = 'Audit History';
+    topBarTitle = 'Audit history';
     breadcrumbs = [{ label: 'Workspace', href: '/' }];
     pageContent = <HistoryPage navigate={navigate} />;
+    isWhiteBg = false;
   } else if (currentRoute === '/settings') {
-    topBarTitle = 'Settings & Diagnostics';
+    topBarTitle = 'Settings & diagnostics';
     breadcrumbs = [{ label: 'Workspace', href: '/' }];
     pageContent = <SettingsPage />;
+    isWhiteBg = false;
   } else {
-    topBarTitle = 'Not Found';
+    topBarTitle = 'Not found';
     pageContent = (
-      <div className="p-12 text-center text-[#707770]">
-        <h3 className="text-[16px] font-semibold text-[#202522]">Page Not Found</h3>
+      <div className="p-12 text-center text-[var(--text-secondary)]">
+        <h3 className="text-[16px] font-bold text-[var(--ink)]">Page Not Found</h3>
         <p className="text-[13px] mt-1 mb-4">The requested route does not exist.</p>
         <button
           onClick={() => navigate('/')}
-          className="px-3 py-1.5 bg-[#326B55] text-white rounded text-[12px]"
+          className="px-4 py-2 bg-[var(--ink)] text-white rounded-[10px] text-[12px] font-semibold"
         >
           Return to Workspace
         </button>
@@ -84,8 +79,8 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F8F6] text-[#202522] flex">
-      {/* Fixed Desktop Sidebar */}
+    <div className={`min-h-screen text-[var(--ink)] flex ${isWhiteBg ? 'bg-white' : 'bg-[var(--bg-page)]'}`}>
+      {/* Fixed Desktop Sidebar (240px) */}
       <Sidebar
         currentRoute={currentRoute}
         navigate={navigate}
@@ -94,16 +89,15 @@ export function App() {
       />
 
       {/* Main Workspace Area */}
-      <div className="flex-1 lg:pl-64 flex flex-col min-w-0">
+      <div className="flex-1 lg:pl-[240px] flex flex-col min-w-0">
         <TopBar
           title={topBarTitle}
           breadcrumbs={breadcrumbs}
-          actions={topBarActions}
           onOpenMobileMenu={() => setIsOpenMobile(true)}
           navigate={navigate}
         />
 
-        <main className="flex-1 overflow-x-hidden">
+        <main className={`flex-1 overflow-x-hidden ${isWhiteBg ? 'bg-white' : 'bg-[var(--bg-page)]'}`}>
           {pageContent}
         </main>
       </div>

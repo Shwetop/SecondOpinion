@@ -8,10 +8,7 @@ import {
   AlertCircle, 
   FileCode, 
   BookOpen, 
-  Settings2,
-  Sparkles,
-  Layers,
-  CheckCircle2
+  Settings2
 } from 'lucide-react';
 import { uploadSourceFile, createAudit, fetchAudit, fetchDemoDataset } from '../services/api';
 import type { AuditOptions } from '../types';
@@ -61,7 +58,14 @@ export const NewAuditPage: React.FC<NewAuditPageProps> = ({ navigate }) => {
       setUploading(true);
       setUploadError(null);
       const res = await uploadSourceFile(file);
-      setUploadedDocs(prev => [...prev, res]);
+      const newDoc: UploadedDoc = {
+        id: res.id,
+        filename: res.filename,
+        size_bytes: res.size_bytes,
+        page_count: res.page_count,
+        preview_snippet: res.preview_snippet || ''
+      };
+      setUploadedDocs(prev => [...prev, newDoc]);
     } catch (err: any) {
       setUploadError(err.message || 'File upload failed');
     } finally {
@@ -76,30 +80,29 @@ export const NewAuditPage: React.FC<NewAuditPageProps> = ({ navigate }) => {
 
   const loadDemo = async (demoId: 'earnings' | 'cybersecurity') => {
     try {
-      setSubmitError(null);
       const demo = await fetchDemoDataset(demoId);
       setTitle(demo.title);
       setAnswerText(demo.answer_text);
-      setPastedSource(demo.source_text);
       setSourceMode('paste');
+      setPastedSource(demo.source_text);
     } catch (err: any) {
-      setSubmitError(err.message || 'Failed to load demo dataset');
+      alert(`Failed to load preset: ${err.message}`);
     }
   };
 
   const handleRunAudit = async () => {
     if (!answerText.trim()) {
-      setSubmitError('Please supply the AI-generated answer to audit.');
-      return;
-    }
-
-    if (sourceMode === 'paste' && !pastedSource.trim()) {
-      setSubmitError('Please paste the reference source material.');
+      setSubmitError('Please provide target AI output text to audit.');
       return;
     }
 
     if (sourceMode === 'upload' && uploadedDocs.length === 0) {
-      setSubmitError('Please upload at least one source document (PDF, DOCX, or TXT).');
+      setSubmitError('Please upload at least one source document or switch to Paste mode.');
+      return;
+    }
+
+    if (sourceMode === 'paste' && !pastedSource.trim()) {
+      setSubmitError('Please paste primary ground-truth source text.');
       return;
     }
 
@@ -144,150 +147,155 @@ export const NewAuditPage: React.FC<NewAuditPageProps> = ({ navigate }) => {
   };
 
   return (
-    <div className="w-full px-8 py-6 space-y-5">
+    <div className="w-full max-w-[1200px] mx-auto px-6 lg:px-10 py-9 space-y-7">
       
-      {/* Page Title & Presets (Full Width) */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-[#E2E5E0]">
+      {/* Page Title & Presets */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-[20px] font-semibold text-[#202522]">
+          <h1 className="text-[28px] font-extrabold text-[var(--ink)] tracking-tight">
             New Audit Submission
-          </h2>
-          <p className="text-[13px] text-[#707770] mt-0.5">
-            Submit an AI-generated answer and primary reference documents for traceable verification.
+          </h1>
+          <p className="text-[14px] text-[var(--text-secondary)] mt-1 font-medium">
+            Verify AI-generated answers against primary reference documentation with traceable citations.
           </p>
         </div>
 
-        {/* Demo Data Presets */}
-        <div className="flex items-center gap-2.5 text-[12px]">
-          <span className="text-[#707770] font-medium">Quick Demonstration Presets:</span>
+        {/* Playfield Demo Data Pills */}
+        <div className="flex items-center gap-2 text-[13px]">
+          <span className="text-[var(--text-secondary)] font-medium hidden sm:inline">Presets:</span>
           <button
+            type="button"
             onClick={() => loadDemo('earnings')}
-            className="px-3 py-1.5 text-[11px] font-medium bg-[#FFFFFF] hover:bg-[#F7F8F6] border border-[#E2E5E0] rounded text-[#202522] transition-colors shadow-xs"
+            className="h-[38px] px-3.5 font-bold bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--line)] rounded-[10px] text-[var(--ink)] transition-colors"
           >
-            Q3 Earnings Report Sample
+            BioCorp Q3 SEC
           </button>
           <button
+            type="button"
             onClick={() => loadDemo('cybersecurity')}
-            className="px-3 py-1.5 text-[11px] font-medium bg-[#FFFFFF] hover:bg-[#F7F8F6] border border-[#E2E5E0] rounded text-[#202522] transition-colors shadow-xs"
+            className="h-[38px] px-3.5 font-bold bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--line)] rounded-[10px] text-[var(--ink)] transition-colors"
           >
-            Security Compliance Sample
+            Cloud Security
           </button>
         </div>
       </div>
 
       {submitError && (
-        <div className="p-3 bg-[#FDF2F2] border border-[#F8CBCB] rounded text-[13px] text-[#A82A2A] flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
+        <div className="p-4 bg-[var(--contradicted-tint)] border border-[var(--line)] rounded-[12px] text-[13px] text-[var(--contradicted-text)] flex items-center gap-2.5 font-medium">
+          <AlertCircle className="w-4 h-4 shrink-0 text-[var(--contradicted-dot)]" />
           <span>{submitError}</span>
         </div>
       )}
 
-      {/* Audit Title Input */}
-      <div className="bg-[#FFFFFF] border border-[#E2E5E0] rounded-md p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-        <label className="text-[12px] font-semibold uppercase tracking-wider text-[#707770] shrink-0 sm:w-44">
-          Audit Ledger Title
+      {/* Audit Title Input Card */}
+      <div className="bg-[var(--surface)] rounded-[16px] p-5 border border-[var(--line)] flex flex-col sm:flex-row sm:items-center gap-4">
+        <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)] shrink-0 sm:w-44">
+          Audit Title
         </label>
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g. Clinical Trial Analysis BC-902 / Q3 Financial Audit Report"
-          className="flex-1 px-3 py-1.5 bg-[#FBFBFA] border border-[#E2E5E0] rounded text-[13px] focus:outline-none focus:border-[#326B55]"
+          placeholder="e.g. BioCorp Clinical Trial BC-902 & SEC 10-Q Financial Verification"
+          className="flex-1 h-[40px] px-4 bg-[var(--surface-alt)] border border-[var(--line)] rounded-[10px] text-[13.5px] font-medium text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--ink)]"
         />
-        <span className="text-[11px] text-[#707770] font-mono shrink-0 hidden sm:inline">
-          Automatic from input if left blank
+        <span className="text-[12px] text-[var(--text-secondary)] font-medium shrink-0 hidden sm:inline">
+          Auto-generated if blank
         </span>
       </div>
 
-      {/* Two-Column Document Submission Workspace (Full Width, Viewport Efficient) */}
+      {/* Two-Column Document Submission Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Left Column: AI-Generated Answer */}
-        <div className="bg-[#FFFFFF] border border-[#E2E5E0] rounded-md p-5 flex flex-col justify-between space-y-3">
+        <div className="bg-[var(--surface)] rounded-[16px] p-6 border border-[var(--line)] flex flex-col justify-between space-y-4">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-[12px] font-semibold text-[#202522] uppercase tracking-wider flex items-center gap-1.5">
-                <FileCode className="w-4 h-4 text-[#326B55]" />
-                Target AI-Generated Answer
-              </label>
+              <h2 className="text-[16px] font-bold text-[var(--ink)] flex items-center gap-2">
+                <FileCode className="w-4 h-4 text-[var(--accent-text)]" />
+                Target AI Output Text
+              </h2>
               {answerText && (
                 <button
+                  type="button"
                   onClick={() => setAnswerText('')}
-                  className="text-[11px] text-[#A82A2A] hover:underline font-medium"
+                  className="text-[12px] text-[var(--contradicted-text)] hover:underline font-bold"
                 >
-                  Clear Editor
+                  Clear editor
                 </button>
               )}
             </div>
-            <p className="text-[11px] text-[#707770] mb-3">
-              The unverified output or report produced by your AI model to be audited.
+            <p className="text-[13px] text-[var(--text-secondary)] mb-3 font-medium">
+              The AI response or report to be audited for discrepancies and hallucinations.
             </p>
 
             <textarea
-              rows={18}
+              rows={16}
               value={answerText}
               onChange={(e) => setAnswerText(e.target.value)}
               placeholder="Paste the full AI-generated response, analysis, or claims here..."
-              className="w-full p-4 bg-[#FBFBFA] border border-[#E2E5E0] rounded text-[13.5px] font-normal leading-relaxed focus:outline-none focus:border-[#326B55] resize-y min-h-[380px]"
+              className="w-full p-4 bg-[var(--surface-alt)] border border-[var(--line)] rounded-[10px] text-[13.5px] font-sans leading-relaxed focus:outline-none focus:ring-2 focus:ring-[var(--ink)] resize-y min-h-[380px] text-[var(--ink)]"
             />
           </div>
 
-          <div className="flex items-center justify-between pt-3 border-t border-[#E2E5E0] text-[11px] text-[#707770] font-mono">
+          <div className="flex items-center justify-between pt-3 border-t border-[var(--line)] text-[12px] text-[var(--text-secondary)] font-mono">
             <span>{wordCount} words · {paragraphCount} paragraphs</span>
             <span>{charCount} characters</span>
           </div>
         </div>
 
         {/* Right Column: Primary Source Material */}
-        <div className="bg-[#FFFFFF] border border-[#E2E5E0] rounded-md p-5 flex flex-col justify-between space-y-3">
+        <div className="bg-[var(--surface)] rounded-[16px] p-6 border border-[var(--line)] flex flex-col justify-between space-y-4">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-[12px] font-semibold text-[#202522] uppercase tracking-wider flex items-center gap-1.5">
-                <BookOpen className="w-4 h-4 text-[#326B55]" />
-                Primary Source Material (Ground Truth)
-              </label>
+              <h2 className="text-[16px] font-bold text-[var(--ink)] flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-[var(--accent-text)]" />
+                Primary Source Ground Truth
+              </h2>
 
-              {/* Source Tab Toggle */}
-              <div className="flex rounded border border-[#E2E5E0] p-0.5 bg-[#F7F8F6] text-[11px]">
+              {/* Segmented Control */}
+              <div className="flex rounded-[10px] bg-[#F2F4F7] p-1 text-[12px]">
                 <button
                   type="button"
                   onClick={() => setSourceMode('upload')}
-                  className={`px-3 py-1 rounded font-medium transition-colors ${
-                    sourceMode === 'upload' ? 'bg-[#FFFFFF] text-[#202522] shadow-xs' : 'text-[#707770]'
+                  aria-pressed={sourceMode === 'upload'}
+                  className={`px-3 py-1 rounded-[8px] font-bold transition-all ${
+                    sourceMode === 'upload' ? 'bg-[var(--surface)] text-[var(--ink)]' : 'text-[var(--text-secondary)] hover:text-[var(--ink)]'
                   }`}
                 >
-                  Upload Files (PDF / DOCX)
+                  Upload Files
                 </button>
                 <button
                   type="button"
                   onClick={() => setSourceMode('paste')}
-                  className={`px-3 py-1 rounded font-medium transition-colors ${
-                    sourceMode === 'paste' ? 'bg-[#FFFFFF] text-[#202522] shadow-xs' : 'text-[#707770]'
+                  aria-pressed={sourceMode === 'paste'}
+                  className={`px-3 py-1 rounded-[8px] font-bold transition-all ${
+                    sourceMode === 'paste' ? 'bg-[var(--surface)] text-[var(--ink)]' : 'text-[var(--text-secondary)] hover:text-[var(--ink)]'
                   }`}
                 >
-                  Paste Ground-Truth Text
+                  Paste Text
                 </button>
               </div>
             </div>
 
-            <p className="text-[11px] text-[#707770] mb-3">
-              Official reference documentation used for verbatim citation extraction and mathematical cross-checks.
+            <p className="text-[13px] text-[var(--text-secondary)] mb-3 font-medium">
+              Reference documentation used for verbatim citation extraction and mathematical cross-checks.
             </p>
 
             {sourceMode === 'upload' ? (
               <div className="space-y-4">
                 {/* Upload Drag & Drop Area */}
-                <label className="border-2 border-dashed border-[#D5D8D2] hover:border-[#326B55] rounded-md p-8 flex flex-col items-center justify-center cursor-pointer bg-[#FBFBFA] transition-colors">
-                  <Upload className="w-8 h-8 text-[#707770] mb-2" />
-                  <span className="text-[13.5px] font-medium text-[#202522]">
+                <label className="border border-dashed border-[var(--line)] hover:border-[var(--accent)] rounded-[12px] p-8 flex flex-col items-center justify-center cursor-pointer bg-[var(--surface-alt)] transition-colors">
+                  <Upload className="w-7 h-7 text-[var(--text-secondary)] mb-2" />
+                  <span className="text-[13.5px] font-bold text-[var(--ink)]">
                     Select source document or drag & drop files
                   </span>
-                  <span className="text-[11px] text-[#707770] mt-1 font-mono">
-                    Supported: PDF (PyMuPDF/pypdf), Word (.docx), PowerPoint (.pptx), Plain Text (.txt, .md)
+                  <span className="text-[11px] text-[var(--text-secondary)] mt-1 font-mono text-center">
+                    PDF, Word (.docx), Plain Text (.txt, .md)
                   </span>
                   <input
                     type="file"
-                    accept=".pdf,.docx,.doc,.pptx,.txt,.md"
+                    accept=".pdf,.docx,.doc,.txt,.md"
                     className="hidden"
                     onChange={handleFileUpload}
                     disabled={uploading}
@@ -295,14 +303,14 @@ export const NewAuditPage: React.FC<NewAuditPageProps> = ({ navigate }) => {
                 </label>
 
                 {uploading && (
-                  <div className="flex items-center gap-2 text-[12px] text-[#326B55] p-3 bg-[#EAF5EE] rounded border border-[#C1E2CE]">
-                    <Clock className="w-4 h-4 animate-spin" />
+                  <div className="flex items-center gap-2 text-[12px] text-[var(--accent-text)] p-3 bg-[var(--accent-tint)] rounded-[10px] border border-[var(--line)] font-semibold">
+                    <Clock className="w-4 h-4 animate-spin text-[var(--accent)]" />
                     <span>Extracting pages and chunking passages with stable character offsets...</span>
                   </div>
                 )}
 
                 {uploadError && (
-                  <div className="p-3 bg-[#FDF2F2] border border-[#F8CBCB] rounded text-[12px] text-[#A82A2A]">
+                  <div className="p-3 bg-[var(--contradicted-tint)] border border-[var(--line)] rounded-[10px] text-[12px] text-[var(--contradicted-text)] font-medium">
                     {uploadError}
                   </div>
                 )}
@@ -310,28 +318,30 @@ export const NewAuditPage: React.FC<NewAuditPageProps> = ({ navigate }) => {
                 {/* Uploaded Documents List */}
                 {uploadedDocs.length > 0 && (
                   <div className="space-y-2 max-h-64 overflow-y-auto">
-                    <span className="text-[11px] font-semibold text-[#707770] uppercase tracking-wider block">
+                    <span className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider block">
                       Parsed Source Documents ({uploadedDocs.length}):
                     </span>
                     {uploadedDocs.map(doc => (
-                      <div key={doc.id} className="p-3 bg-[#F7F8F6] border border-[#E2E5E0] rounded text-[12px] flex items-start justify-between gap-3">
+                      <div key={doc.id} className="p-3 bg-[var(--surface-alt)] border border-[var(--line)] rounded-[10px] text-[12px] flex items-start justify-between gap-3">
                         <div className="overflow-hidden">
-                          <div className="flex items-center gap-2 font-medium text-[#202522]">
-                            <FileText className="w-4 h-4 text-[#326B55] shrink-0" />
+                          <div className="flex items-center gap-2 font-bold text-[var(--ink)]">
+                            <FileText className="w-4 h-4 text-[var(--accent)] shrink-0" />
                             <span className="truncate">{doc.filename}</span>
                           </div>
-                          <div className="text-[11px] text-[#707770] font-mono mt-0.5">
-                            {doc.page_count} page(s) · {doc.preview_snippet ? 'Passages indexed' : ''} · {Math.round(doc.size_bytes / 1024)} KB
+                          <div className="text-[11px] text-[var(--text-secondary)] font-mono mt-0.5">
+                            {doc.page_count} page(s) · {Math.round(doc.size_bytes / 1024)} KB
                           </div>
-                          <p className="text-[11px] text-[#484F49] mt-1 line-clamp-2 italic">
-                            "{doc.preview_snippet}"
-                          </p>
+                          {doc.preview_snippet && (
+                            <p className="text-[12px] text-[var(--text-body)] font-serif italic mt-1 line-clamp-2">
+                              "{doc.preview_snippet}"
+                            </p>
+                          )}
                         </div>
                         <button
                           type="button"
                           onClick={() => removeDoc(doc.id)}
-                          className="text-[#707770] hover:text-[#A82A2A] p-1.5 rounded hover:bg-[#FFFFFF]"
-                          title="Remove document"
+                          aria-label="Remove document"
+                          className="text-[var(--text-secondary)] hover:text-[var(--contradicted-text)] p-1.5 rounded-[8px] hover:bg-[var(--contradicted-tint)] transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -343,55 +353,55 @@ export const NewAuditPage: React.FC<NewAuditPageProps> = ({ navigate }) => {
             ) : (
               <div>
                 <textarea
-                  rows={18}
+                  rows={16}
                   value={pastedSource}
                   onChange={(e) => setPastedSource(e.target.value)}
                   placeholder="Paste verified ground-truth documentation, trial notes, financial ledger, or specification text here..."
-                  className="w-full p-4 bg-[#FBFBFA] border border-[#E2E5E0] rounded text-[13.5px] font-normal leading-relaxed focus:outline-none focus:border-[#326B55] resize-y min-h-[380px]"
+                  className="w-full p-4 bg-[var(--surface-alt)] border border-[var(--line)] rounded-[10px] text-[13.5px] font-sans leading-relaxed focus:outline-none focus:ring-2 focus:ring-[var(--ink)] resize-y min-h-[380px] text-[var(--ink)]"
                 />
               </div>
             )}
           </div>
 
-          <div className="pt-3 border-t border-[#E2E5E0] flex items-center justify-between text-[11px] text-[#707770]">
-            <span>Mode: <strong className="text-[#202522]">Strict Source Grounding</strong></span>
-            <span className="font-mono">Never obeys embedded prompt injections</span>
+          <div className="pt-3 border-t border-[var(--line)] flex items-center justify-between text-[12px] text-[var(--text-secondary)] font-medium">
+            <span>Mode: <strong className="text-[var(--ink)]">Strict Grounding</strong></span>
+            <span className="font-mono text-[11px] text-[var(--text-secondary)]">Neutralizes embedded prompt injections</span>
           </div>
         </div>
       </div>
 
-      {/* Verification Parameters & Run Action (Full Width Banner) */}
-      <div className="bg-[#FFFFFF] border border-[#E2E5E0] rounded-md p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      {/* Verification Parameters & Run Action */}
+      <div className="bg-[var(--surface)] rounded-[16px] p-6 border border-[var(--line)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="space-y-2">
-          <div className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider text-[#202522]">
-            <Settings2 className="w-4 h-4 text-[#707770]" />
-            Auditing Parameters
+          <div className="flex items-center gap-2 text-[16px] font-bold text-[var(--ink)]">
+            <Settings2 className="w-4 h-4 text-[var(--accent-text)]" />
+            <span>Auditing Parameters</span>
           </div>
-          <div className="flex flex-wrap items-center gap-6 text-[13px] text-[#484F49]">
+          <div className="flex flex-wrap items-center gap-6 text-[13px] text-[var(--text-body)] font-medium">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={options.verify_sources}
                 onChange={(e) => setOptions(prev => ({ ...prev, verify_sources: e.target.checked }))}
-                className="accent-[#326B55]"
+                className="w-4 h-4 rounded text-[var(--accent)] accent-[var(--accent)] border-[var(--line)]"
               />
-              <span>Verify against supplied sources</span>
+              <span>Verify against sources</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={options.reasoning_checks}
                 onChange={(e) => setOptions(prev => ({ ...prev, reasoning_checks: e.target.checked }))}
-                className="accent-[#326B55]"
+                className="w-4 h-4 rounded text-[var(--accent)] accent-[var(--accent)] border-[var(--line)]"
               />
-              <span>Reasoning consistency checks</span>
+              <span>Reasoning logic checks</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={options.safety_review}
                 onChange={(e) => setOptions(prev => ({ ...prev, safety_review: e.target.checked }))}
-                className="accent-[#326B55]"
+                className="w-4 h-4 rounded text-[var(--accent)] accent-[var(--accent)] border-[var(--line)]"
               />
               <span>Safety & directive review</span>
             </label>
@@ -399,24 +409,25 @@ export const NewAuditPage: React.FC<NewAuditPageProps> = ({ navigate }) => {
         </div>
 
         <button
+          type="button"
           onClick={handleRunAudit}
           disabled={isSubmitting}
           className={`
-            px-6 py-2.5 rounded text-[13px] font-medium flex items-center gap-2 transition-colors shrink-0 shadow-xs
+            h-[42px] px-6 rounded-[10px] text-[13px] font-bold flex items-center gap-2 transition-all shrink-0
             ${isSubmitting 
-              ? 'bg-[#E2E5E0] text-[#707770] cursor-not-allowed' 
-              : 'bg-[#326B55] hover:bg-[#285644] text-[#FFFFFF]'}
+              ? 'bg-[#EEF0F3] text-[var(--text-secondary)] cursor-not-allowed' 
+              : 'bg-[var(--accent)] hover:opacity-90 text-[var(--ink)]'}
           `}
         >
           {isSubmitting ? (
             <>
-              <Clock className="w-4 h-4 animate-spin" />
-              <span>Processing Audit Pipeline...</span>
+              <Clock className="w-4 h-4 animate-spin text-[var(--ink)]" />
+              <span>Auditing Pipeline Running...</span>
             </>
           ) : (
             <>
               <Play className="w-4 h-4 fill-current" />
-              <span>Run Audit</span>
+              <span>Launch Audit</span>
             </>
           )}
         </button>
@@ -424,36 +435,36 @@ export const NewAuditPage: React.FC<NewAuditPageProps> = ({ navigate }) => {
 
       {/* Live Processing Pipeline Overlay / Progress Tracker */}
       {isSubmitting && (
-        <div className="bg-[#FFFFFF] border border-[#326B55] rounded-md p-6 shadow-sm space-y-4">
+        <div className="bg-[var(--surface)] rounded-[16px] p-6 border border-[var(--line)] space-y-4">
           <div className="flex items-center justify-between text-[13px]">
-            <div className="flex items-center gap-2 font-semibold text-[#202522]">
-              <Clock className="w-4 h-4 animate-spin text-[#326B55]" />
+            <div className="flex items-center gap-2 font-bold text-[var(--ink)]">
+              <Clock className="w-4 h-4 animate-spin text-[var(--accent)]" />
               <span>{activeStepText || 'Auditing in progress...'}</span>
             </div>
-            <span className="font-mono text-[12px] text-[#326B55] font-semibold">{progressPct}%</span>
+            <span className="font-mono text-[13px] text-[var(--accent-text)] font-extrabold">{progressPct}%</span>
           </div>
 
-          <div className="w-full bg-[#E2E5E0] h-2 rounded-full overflow-hidden">
+          <div className="w-full bg-[#EEF0F3] h-2 rounded-full overflow-hidden">
             <div 
-              className="bg-[#326B55] h-full transition-all duration-300"
+              className="bg-[var(--accent)] h-full transition-all duration-300 rounded-full"
               style={{ width: `${progressPct}%` }}
             />
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px] pt-1 text-[#707770]">
-            <div className={`p-2 rounded text-center border ${progressPct >= 15 ? 'text-[#326B55] font-semibold bg-[#EAF5EE] border-[#C1E2CE]' : 'border-[#E2E5E0]'}`}>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-[12px] pt-1 text-[var(--text-secondary)] font-medium">
+            <div className={`p-2.5 rounded-[10px] text-center border transition-colors ${progressPct >= 15 ? 'text-[var(--accent-text)] font-bold bg-[var(--accent-tint)] border-[var(--accent)]' : 'border-[var(--line)]'}`}>
               1. Processing Sources
             </div>
-            <div className={`p-2 rounded text-center border ${progressPct >= 35 ? 'text-[#326B55] font-semibold bg-[#EAF5EE] border-[#C1E2CE]' : 'border-[#E2E5E0]'}`}>
+            <div className={`p-2.5 rounded-[10px] text-center border transition-colors ${progressPct >= 35 ? 'text-[var(--accent-text)] font-bold bg-[var(--accent-tint)] border-[var(--accent)]' : 'border-[var(--line)]'}`}>
               2. Extracting Claims
             </div>
-            <div className={`p-2 rounded text-center border ${progressPct >= 55 ? 'text-[#326B55] font-semibold bg-[#EAF5EE] border-[#C1E2CE]' : 'border-[#E2E5E0]'}`}>
+            <div className={`p-2.5 rounded-[10px] text-center border transition-colors ${progressPct >= 55 ? 'text-[var(--accent-text)] font-bold bg-[var(--accent-tint)] border-[var(--accent)]' : 'border-[var(--line)]'}`}>
               3. Retrieving Evidence
             </div>
-            <div className={`p-2 rounded text-center border ${progressPct >= 75 ? 'text-[#326B55] font-semibold bg-[#EAF5EE] border-[#C1E2CE]' : 'border-[#E2E5E0]'}`}>
+            <div className={`p-2.5 rounded-[10px] text-center border transition-colors ${progressPct >= 75 ? 'text-[var(--accent-text)] font-bold bg-[var(--accent-tint)] border-[var(--accent)]' : 'border-[var(--line)]'}`}>
               4. Verifying Claims
             </div>
-            <div className={`p-2 rounded text-center border ${progressPct >= 95 ? 'text-[#326B55] font-semibold bg-[#EAF5EE] border-[#C1E2CE]' : 'border-[#E2E5E0]'}`}>
+            <div className={`p-2.5 rounded-[10px] text-center border transition-colors ${progressPct >= 95 ? 'text-[var(--accent-text)] font-bold bg-[var(--accent-tint)] border-[var(--accent)]' : 'border-[var(--line)]'}`}>
               5. Assembling Ledger
             </div>
           </div>
