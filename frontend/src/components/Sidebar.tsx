@@ -2,6 +2,7 @@ import React from 'react';
 import { 
   LayoutDashboard, 
   PlusCircle, 
+  History,
   X,
   Activity
 } from 'lucide-react';
